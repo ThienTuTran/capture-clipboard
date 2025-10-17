@@ -87,6 +87,9 @@ func setupPersistence() error {
 	check(err)
 
 	shortcutPath := filepath.Join(startupDir, "capture-clipboard.lnk")
+	if _, err := os.Stat(shortcutPath); err == nil {
+		return nil // Shortcut already exists, do nothing
+	}
 	return createShortcut(exePath, shortcutPath)
 }
 

